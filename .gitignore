@@ -1,0 +1,12 @@
+.suo
+*.VC.db
+*.pdb
+*.exp
+*.lib
+/build/*.obj
+running.dll
+*.bat~
+*.c~
+*.cpp~
+*.h~
+.gitignore~
