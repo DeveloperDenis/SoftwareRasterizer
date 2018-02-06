@@ -1,19 +1,24 @@
 #include "platform_layer.h"
 #include "main.h" // I know platform_layer.h includes main.h, this is just to make it clear to all
 #include "denis_drawing.h"
-#include "rasterize.h"
+
+//TODO(denis): probably don't want to pass the entire memory pointer here, just the specific "transient memory area
+static void* pushArray(Memory* memory, uint32 elementSize, uint32 elementCount)
+{
+	void* result = 0;
+	
+	uint32 requiredMemory = elementSize*elementCount;
+	ASSERT(memory->transientMemoryIndex + requiredMemory < TRANSIENT_MEMORY_SIZE);
+
+	result = &memory->transientMemory[memory->transientMemoryIndex];
+	memory->transientMemoryIndex += requiredMemory;
+
+	return result;
+}
 
 static inline void clearArray(int32 array[], uint32 numElements, int32 value)
 {
 	for (uint32 i = 0; i < numElements; ++i)
-	{
-		array[i] = value;
-	}
-}
-static inline void clearArray(int32 array[], int32 value)
-{
-	int32 length = ARRAY_COUNT(array, int32);
-	for (int32 i = 0; i < length; ++i)
 	{
 		array[i] = value;
 	}
@@ -40,8 +45,8 @@ static Vector3 pointToScreenPos(Bitmap* screen, Vector3f objectPos, Matrix4f* tr
 	return result;
 }
 
-static void faceToScreenPos(Bitmap* screen, Vector3f* vertices, Face* face, Matrix4f* transform,
-							Vector3 output[3])
+static inline void faceToScreenPos(Bitmap* screen, Vector3f* vertices, Face* face, Matrix4f* transform,
+								   Vector3 output[3])
 {
 	Vector3f vertex1 = vertices[face->vertices[0]];
 	Vector3f vertex2 = vertices[face->vertices[1]];
@@ -108,23 +113,7 @@ static inline void drawTriangle(Bitmap* screen, Vector3f v1, Vector3f v2, Vector
 
 }
 
-static inline void rasterizeTriangle(Bitmap* screen, Vector3f v1, Vector3f v2, Vector3f v3, Matrix4f* transform,
-									 int32* zBuffer, uint32 colour = 0xFF00FF00)
-{
-	Vector3 screenPoints[3];
-	screenPoints[0] = pointToScreenPos(screen, v1, transform);
-	screenPoints[1] = pointToScreenPos(screen, v2, transform);
-	screenPoints[2] = pointToScreenPos(screen, v3, transform);
-	
-	rasterize(screen, screenPoints, zBuffer, colour);
-}
-static inline void rasterizeTriangle(Bitmap* screen, Vector3 v1, Vector3 v2, Vector3 v3, int32* zBuffer,
-									 uint32 colour = 0xFF00FF00)
-{
-	Vector3 pointArray[3] = {v1, v2, v3};
-	rasterize(screen, pointArray, zBuffer, colour);
-}
-
+//NOTE(denis): returns a normalized direction of the light relative to a face
 static inline Vector3f getLightDirection(Face* face, Vector3f* vertices, Vector3f lightPos)
 {
 	Vector3f midPoint =
@@ -134,12 +123,13 @@ static inline Vector3f getLightDirection(Face* face, Vector3f* vertices, Vector3
 	return lightDirection;
 }
 
+//NOTE(denis): assumes lightDirection is normalized, but not normal (for some reason)
 uint32 calculateLight(Vector3f normal, Vector3f lightDirection)
 {
 	Vector3f normalizedNormal = normalize(normal);
 	real32 scalarProduct = dot(normalizedNormal, lightDirection);
 
-	uint32 ambientColour = 0x00151515;
+	uint32 ambientColour = 0x00202020;
 	uint32 colour;
 	if (scalarProduct == 1.0f)
 	    colour = 0xFFFFFFFF;
@@ -172,29 +162,6 @@ static void drawWireframe(Bitmap* screen, Mesh* mesh)
 			
 			uint32 colour = 0xFFA00055;
 		    drawTriangle(screen, screenPoints[0], screenPoints[1], screenPoints[2], colour);
-		}
-	}
-}
-
-static void drawFlatShaded(Bitmap* screen, Mesh* mesh, int32* zBuffer, Vector3f lightPos)
-{
-	for (uint32 faceIndex = 0; faceIndex < mesh->numFaces; ++faceIndex)
-	{
-	    Face face = mesh->faces[faceIndex];
-
-		if (isValidFace(&face, mesh->numVertices))
-		{
-			Vector3 screenPoints[3];
-			faceToScreenPos(screen, mesh->vertices, &face, &mesh->worldTransform, screenPoints);
-
-			Vector3f lightDirection = getLightDirection(&face, mesh->vertices, lightPos);
-			
-			Vector3f side1 = mesh->vertices[face.vertices[1]] - mesh->vertices[face.vertices[0]];
-			Vector3f side2 = mesh->vertices[face.vertices[2]] - mesh->vertices[face.vertices[1]];
-			Vector3f triangleNormal = cross(side1, side2);
-			uint32 faceColour = calculateLight(triangleNormal, lightDirection);
-			
-			rasterize(screen, screenPoints, zBuffer, faceColour);
 		}
 	}
 }
@@ -241,7 +208,192 @@ static Matrix4f calculateProjectionMatrix(real32 near, real32 far, real32 fov)
 	projectionMatrix[0][0] = fovScaleFactor;
 	projectionMatrix[1][1] = fovScaleFactor;
 
-	return projectionMatrix;
+   return projectionMatrix;
+}
+
+union Triangle3
+{
+	struct
+	{
+		Vector3 p1;
+		Vector3 p2;
+		Vector3 p3;
+	};
+	Vector3 p[3];
+
+	Vector3& operator[](uint32 index)
+	{
+		ASSERT(index >= 0 && index < 3);
+		return p[index];
+	};
+};
+
+static inline Triangle3 Tri3(Vector3 p1, Vector3 p2, Vector3 p3)
+{
+	Triangle3 tri;
+	tri.p1 = p1;
+	tri.p2 = p2;
+	tri.p3 = p3;
+	return tri;
+}
+
+static Vector3f triangleBarycentric(Triangle3 triangle, Vector2 point)
+{
+	Vector3f result;
+
+	Vector2 p1 = triangle[0].xy;
+	Vector2 p2 = triangle[1].xy;
+	Vector2 p3 = triangle[2].xy;
+
+	//TODO(denis): denominator can be taken out of this function as an optimization
+	int32 denominator = (p2.y - p3.y)*(p1.x - p3.x) + (p3.x - p2.x)*(p1.y - p3.y);
+	result.x = (real32)((p2.y - p3.y)*(point.x - p3.x) + (p3.x - p2.x)*(point.y - p3.y)) / (real32)denominator;
+	result.y = (real32)((p3.y - p1.y)*(point.x - p3.x) + (p1.x - p3.x)*(point.y - p3.y)) / (real32)denominator;
+	result.z = 1.0f - result.x - result.y;
+	
+	return result;
+}
+
+struct TriangleFragments
+{
+	uint32 numFragments;
+
+	//TODO(denis): if the number of properties here becomes a lot, I could potentially create a Fragment struct that could
+	// help simplify the memory allocation
+	Vector3* fragments;
+	Vector3f* baryCoords;
+};
+//TODO(denis): see comment for pushArray
+static TriangleFragments barycentricRasterize(Memory* memory, Bitmap* buffer, Triangle3 triangle)
+{
+	TriangleFragments result = {};
+	
+	int32 top = MIN(MIN(triangle.p1.y, triangle.p2.y), triangle.p3.y);
+	int32 bottom = MAX(MAX(triangle.p1.y, triangle.p2.y), triangle.p3.y);
+	int32 left = MIN(MIN(triangle.p1.x, triangle.p2.x), triangle.p3.x);
+	int32 right = MAX(MAX(triangle.p1.x, triangle.p2.x), triangle.p3.x);
+
+	if (bottom < 0 || top >= (int32)buffer->height)
+		return result;
+	if (right < 0 || left >= (int32)buffer->width)
+		return result;
+
+	Vector3 p1 = V3(triangle.p1.xy, 0);
+	Vector3 p2 = V3(triangle.p2.xy, 0);
+	Vector3 p3 = V3(triangle.p3.xy, 0);
+
+	//TODO(denis): not great solution, potentially allocates WAY more than required
+	uint32 pixelCount = (bottom - top)*(right - left);
+	result.fragments = (Vector3*)pushArray(memory, sizeof(Vector3), pixelCount);
+	result.baryCoords = (Vector3f*)pushArray(memory, sizeof(Vector3f), pixelCount);
+
+	for (int32 y = top; y < bottom; ++y)
+	{
+		for (int32 x = left; x < right; ++x)
+		{
+			Vector2 testPoint = V2(x, y);
+			Vector3f testPointBarycentric = triangleBarycentric(triangle, testPoint);
+
+			//TODO(denis): not perfect, but handles edge cases better than the cross product method
+			if (testPointBarycentric.x >= 0.0f && testPointBarycentric.x <= 1.0f &&
+				testPointBarycentric.y >= 0.0f && testPointBarycentric.y <= 1.0f &&
+				testPointBarycentric.z >= 0.0f && testPointBarycentric.z <= 1.0f)
+			{
+				int32 zValue = testPointBarycentric.x*p1.z + testPointBarycentric.y*p2.z + testPointBarycentric.z*p3.z;
+				result.fragments[result.numFragments] = V3(testPoint, zValue);
+				result.baryCoords[result.numFragments] = testPointBarycentric;
+				++result.numFragments;
+			}
+		}
+	}
+
+	return result;
+}
+
+static bool pointsOnSameSideOfLine(Vector3 linePoint1, Vector3 linePoint2, Vector3 testPoint1, Vector3 testPoint2)
+{
+	bool onSameSide = false;
+	
+	Vector3 lineVector = linePoint2 - linePoint1;
+	Vector3 testVector1 = linePoint2 - testPoint1;
+	Vector3 testVector2 = linePoint2 - testPoint2;
+
+	Vector3 testResult1 = cross(lineVector, testVector1);
+	Vector3 testResult2 = cross(lineVector, testVector2);
+
+	if ((testResult1.z < 0 && testResult2.z < 0) || (testResult1.z > 0 && testResult2.z > 0))
+	{
+		onSameSide = true;
+	}
+
+	return onSameSide;
+}
+
+//NOTE(denis): this is the cross product approach to testing if a point is within a triangle
+static void rasterizeTest(Bitmap* buffer, Triangle3 triangle, uint32 colour)
+{
+	int32 top = MIN(MIN(triangle.p1.y, triangle.p2.y), triangle.p3.y);
+	int32 bottom = MAX(MAX(triangle.p1.y, triangle.p2.y), triangle.p3.y);
+	int32 left = MIN(MIN(triangle.p1.x, triangle.p2.x), triangle.p3.x);
+	int32 right = MAX(MAX(triangle.p1.x, triangle.p2.x), triangle.p3.x);
+
+	if (bottom < 0 || top >= (int32)buffer->height)
+		return;
+	if (right < 0 || left >= (int32)buffer->width)
+		return;
+
+	Vector3 p1 = V3(triangle.p1.xy, 0);
+	Vector3 p2 = V3(triangle.p2.xy, 0);
+	Vector3 p3 = V3(triangle.p3.xy, 0);
+	
+	for (int32 y = top; y < bottom; ++y)
+	{
+		for (int32 x = left; x < right; ++x)
+		{
+			Vector3 testPoint = V3(x, y, 0);
+
+			//TODO(denis): this approach doesn't seem to draw points that fall directly on an edge properly
+			// need to create actual test cases to see how to do this properly
+			if (pointsOnSameSideOfLine(p1, p2, testPoint, p3) &&
+				pointsOnSameSideOfLine(p2, p3, testPoint, p1) &&
+				pointsOnSameSideOfLine(p3, p1, testPoint, p2))
+			{
+				drawPoint(buffer, x, y, colour);
+			}
+
+#if 0
+			//TODO(denis): super simple and bad way of solving the above problem
+			drawLine(buffer, p1.xy, p2.xy, colour);
+			drawLine(buffer, p2.xy, p3.xy, colour);
+			drawLine(buffer, p3.xy, p1.xy, colour);
+#endif
+		}
+	}
+}
+
+static void testTriangleRasterization(Bitmap* buffer, void (*rasterizeFunction)(Bitmap*, Triangle3, uint32))
+{
+	Vector3 p1 = V3(640, 360, 100);
+	Vector3 p2 = V3(600, 380, 100);
+	Vector3 p3 = V3(630, 400, 100);
+	Vector3 p4 = V3(625, 300, 100);
+	Vector3 p5 = V3(700, 313, 100);
+	Vector3 p6 = V3(720, 350, 100);
+	Vector3 p7 = V3(712, 480, 100);
+
+	Triangle3 triangle1 = Tri3(p1, p2, p3);
+	Triangle3 triangle2 = Tri3(p1, p4, p5);
+	Triangle3 triangle3 = Tri3(p1, p2, p4);
+	Triangle3 triangle4 = Tri3(p1, p6, p5);
+	Triangle3 triangle5 = Tri3(p1, p6, p7);
+	Triangle3 triangle6 = Tri3(p1, p7, p3);
+
+	rasterizeFunction(buffer, triangle1, 0xFFFF0000);
+	rasterizeFunction(buffer, triangle2, 0xFF00FF00);
+	rasterizeFunction(buffer, triangle3, 0xFF0000FF);
+	rasterizeFunction(buffer, triangle4, 0xFF0000FF);
+	rasterizeFunction(buffer, triangle5, 0xFFFF0000);
+	rasterizeFunction(buffer, triangle6, 0xFF0000FF);
 }
 
 static void initMemory(Bitmap* screen, Memory* memory, Input* input)
@@ -272,7 +424,8 @@ static void initMemory(Bitmap* screen, Memory* memory, Input* input)
 
 	memory->lightPos = V3f(3.0f, 8.0f, 10.0f);
 
-	initMesh(&memory->cube1, 8, 8, 12, memory->cubeMemory, "../data/cube.obj");
+	initMesh(&memory->cube1, 8, 8, 12, memory->cubeMemory, (char*)"../data/cube.obj");
+	memory->cube1.objectTransform.translate(0.0f, 3.0f, 5.0f);
 	memory->cube1.worldTransform =
 		memory->projectionTransform * memory->viewTransform * memory->cube1.objectTransform;
 
@@ -299,63 +452,65 @@ exportDLL MAIN_UPDATE_CALL(mainUpdateCall)
 	{
 		initMemory(screen, memory, input);
 	}
+
+	memory->transientMemoryIndex = 0;
 	
 	clearArray(memory->zBuffer, sizeof(memory->zBuffer)/sizeof(int32), 999999);
 
 	Rect2 viewportRect = Rect2(memory->cameraBufferPos.x, memory->cameraBufferPos.y,
 							   memory->cameraBuffer.width, memory->cameraBuffer.height);
+
+	cube1->objectTransform.rotate(0.0f, 0.01f, 0.0f);
+    cube1->worldTransform = memory->projectionTransform * memory->viewTransform * cube1->objectTransform;
 	
 	// drawing
-	fillBuffer(screen, 0xFFFFFFFF);
+	fillBuffer(screen, 0xFF4D2177);
+	fillBuffer(&memory->cameraBuffer, 0xFF604580);
 
-	//NOTE(denis): triangle drawing tests
-	Vector3 p1 = V3(640, 360, 100);
-	Vector3 p2 = V3(600, 380, 100);
-	Vector3 p3 = V3(630, 400, 100);
-	Vector3 p4 = V3(625, 300, 100);
-	Vector3 p5 = V3(700, 313, 100);
-	Vector3 p6 = V3(720, 350, 100);
-	Vector3 p7 = V3(712, 480, 100);
-
-	Vector3 triangle1[3] = {p1, p2, p3};
-	Vector3 triangle2[3] = {p1, p4, p5};
-	Vector3 triangle3[3] = {p1, p2, p4};
-	Vector3 triangle4[3] = {p1, p6, p5};
-	Vector3 triangle5[3] = {p1, p6, p7};
-	Vector3 triangle6[3] = {p1, p7, p3};
-
-	bool fillTriangles = true;
-	bool drawOutlines = false;
+	//TODO(denis): fill this out
+	uint32 faceColours[12];
 	
-	if (fillTriangles)
+	//TODO(denis): separate into function later
+	for (uint32 faceIndex = 0; faceIndex < cube1->numFaces; ++faceIndex)
 	{
-		rasterize(screen, triangle1, memory->zBuffer, 0xFFFF0000);
-		rasterize(screen, triangle2, memory->zBuffer, 0xFF00FF00);
-		rasterize(screen, triangle3, memory->zBuffer, 0xFF0000FF);
-		rasterize(screen, triangle4, memory->zBuffer, 0xFF0000FF);
-		rasterize(screen, triangle5, memory->zBuffer, 0xFFFF0000);
-		rasterize(screen, triangle6, memory->zBuffer, 0xFF0000FF);
-	}
+		Face* face = &cube1->faces[faceIndex];
+		if (!isValidFace(face, cube1->numVertices))
+			continue;
 
-	if (drawOutlines)
-	{
-		drawTriangle(screen, triangle1, 0xFF000000);
-		drawTriangle(screen, triangle2, 0xFF000000);
-		drawTriangle(screen, triangle3, 0xFF000000);
-		drawTriangle(screen, triangle4, 0xFF000000);
-		drawTriangle(screen, triangle5, 0xFF000000);
-		drawTriangle(screen, triangle6, 0xFF000000);
+		Triangle3 screenTriangle;
+		faceToScreenPos(&memory->cameraBuffer, cube1->vertices, face, &cube1->worldTransform, screenTriangle.p);
+
+		//TODO(denis): we only ever need to hold one TriangleFragment in memory at a time, so we don't have to do all the transient
+		// memory stuff, we only need to hold one at a time.
+		TriangleFragments triangleFragments = barycentricRasterize(memory, &memory->cameraBuffer, screenTriangle);
+
+		Vector3f v1 = cube1->vertices[face->vertices[0]];
+		Vector3f v2 = cube1->vertices[face->vertices[1]];
+		Vector3f v3 = cube1->vertices[face->vertices[2]];
+
+		//TODO(denis): still some funky-ness around edges while rotating with weird shark teeth looking things
+		// don't know if this is a lighting or zbuffer issue. Need to do some testing. Draw each face with a specified colour, without
+		// any lighting to test.
+		Vector3f faceNormal = cross(v2 - v1, v3 - v2);
+		Vector3f facePosition = (v1 + v2 + v3) / 3;
+		Vector3f lightDirection = getLightDirection(face, cube1->vertices, memory->lightPos);
+		uint32 colour = calculateLight(faceNormal, lightDirection);
+		
+		for (uint32 i = 0; i < triangleFragments.numFragments; ++i)
+		{
+			Vector3 fragmentPos = triangleFragments.fragments[i];
+			Vector3f fragmentBary = triangleFragments.baryCoords[i];
+			int32 zValue = fragmentBary.x*screenTriangle[0].z + fragmentBary.y*screenTriangle[1].z + fragmentBary.z*screenTriangle[2].z;
+
+			if (zValue < memory->zBuffer[fragmentPos.y*screen->width + fragmentPos.x])
+			{
+				drawPoint(&memory->cameraBuffer, triangleFragments.fragments[i].x, triangleFragments.fragments[i].y, colour);
+				memory->zBuffer[fragmentPos.y*screen->width + fragmentPos.x] = zValue;
+			}
+		}
 	}
 	
-#if 0
-	fillBuffer(&memory->cameraBuffer, 0xFF3D212A);
-
-	drawFlatShaded(&memory->cameraBuffer, cube1, memory->zBuffer, memory->lightPos);
-	drawFlatShaded(&memory->cameraBuffer, cube2, memory->zBuffer, memory->lightPos);
-	drawFlatShaded(&memory->cameraBuffer, cube3, memory->zBuffer, memory->lightPos);
-
 	drawBitmap(screen, &memory->cameraBuffer, memory->cameraBufferPos);
-#endif
-
+	
 	memory->lastMousePos = input->mouse.pos;
 }

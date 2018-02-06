@@ -1,6 +1,7 @@
 #if !defined(MESH_H_)
 #define MESH_H_
 
+#include "denis_strings.h"
 //NOTE(denis): needed to load the model .obj file
 #include <cstdio>
 

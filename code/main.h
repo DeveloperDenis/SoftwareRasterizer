@@ -27,6 +27,8 @@ const uint32 STATIC_SETTINGS::FPS_TARGET = 60;
 #define MIN_ZOOM 2.0f
 #define MAX_ZOOM 20.0f
 
+#define TRANSIENT_MEMORY_SIZE MEGABYTE(10)
+
 struct Camera
 {
 	Vector3f pos;
@@ -49,6 +51,9 @@ struct ZBufferData
 struct Memory
 {
 	bool isInit;
+
+	uint32 transientMemoryIndex;
+	uint8 transientMemory[TRANSIENT_MEMORY_SIZE];
 	
 	Vector3f upVector;
 	
