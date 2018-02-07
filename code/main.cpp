@@ -299,7 +299,7 @@ static TriangleFragments barycentricRasterize(Memory* memory, Bitmap* buffer, Tr
 				testPointBarycentric.y >= 0.0f && testPointBarycentric.y <= 1.0f &&
 				testPointBarycentric.z >= 0.0f && testPointBarycentric.z <= 1.0f)
 			{
-				int32 zValue = testPointBarycentric.x*p1.z + testPointBarycentric.y*p2.z + testPointBarycentric.z*p3.z;
+				int32 zValue = (int32)(testPointBarycentric.x*p1.z + testPointBarycentric.y*p2.z + testPointBarycentric.z*p3.z);
 				result.fragments[result.numFragments] = V3(testPoint, zValue);
 				result.baryCoords[result.numFragments] = testPointBarycentric;
 				++result.numFragments;
@@ -467,8 +467,11 @@ exportDLL MAIN_UPDATE_CALL(mainUpdateCall)
 	fillBuffer(screen, 0xFF4D2177);
 	fillBuffer(&memory->cameraBuffer, 0xFF604580);
 
-	//TODO(denis): fill this out
-	uint32 faceColours[12];
+	uint32 faceColours[12] = {
+		0xFFFF0000, 0xFF00FF00, 0xFF0000FF, 0xFFFFFF00, 0xFFFF00FF, 0xFF00FFFF,
+		0xFF880000, 0xFF008800, 0xFF000088, 0xFF888800, 0xFF880088, 0xFF008888
+	};
+	uint32 colourIndex = 0;
 	
 	//TODO(denis): separate into function later
 	for (uint32 faceIndex = 0; faceIndex < cube1->numFaces; ++faceIndex)
@@ -488,19 +491,19 @@ exportDLL MAIN_UPDATE_CALL(mainUpdateCall)
 		Vector3f v2 = cube1->vertices[face->vertices[1]];
 		Vector3f v3 = cube1->vertices[face->vertices[2]];
 
-		//TODO(denis): still some funky-ness around edges while rotating with weird shark teeth looking things
-		// don't know if this is a lighting or zbuffer issue. Need to do some testing. Draw each face with a specified colour, without
-		// any lighting to test.
+#if 0
 		Vector3f faceNormal = cross(v2 - v1, v3 - v2);
 		Vector3f facePosition = (v1 + v2 + v3) / 3;
 		Vector3f lightDirection = getLightDirection(face, cube1->vertices, memory->lightPos);
 		uint32 colour = calculateLight(faceNormal, lightDirection);
+#endif
+		uint32 colour = faceColours[colourIndex++];
 		
 		for (uint32 i = 0; i < triangleFragments.numFragments; ++i)
 		{
 			Vector3 fragmentPos = triangleFragments.fragments[i];
 			Vector3f fragmentBary = triangleFragments.baryCoords[i];
-			int32 zValue = fragmentBary.x*screenTriangle[0].z + fragmentBary.y*screenTriangle[1].z + fragmentBary.z*screenTriangle[2].z;
+			int32 zValue = (int32)(fragmentBary.x*screenTriangle[0].z + fragmentBary.y*screenTriangle[1].z + fragmentBary.z*screenTriangle[2].z);
 
 			if (zValue < memory->zBuffer[fragmentPos.y*screen->width + fragmentPos.x])
 			{
