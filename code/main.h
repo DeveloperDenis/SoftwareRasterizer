@@ -77,6 +77,9 @@ struct Memory
 	Mesh cube2;
 	Mesh cube3;
 	uint8 cubeMemory[sizeof(Vector3f)*8 + sizeof(Vector3f)*8 + sizeof(Face)*12];
+
+	Mesh monkey;
+	uint8 monkeyMemory[sizeof(Vector3f)*507 + sizeof(Vector3f)*507 + sizeof(Face)*968];
 	
 	Matrix4f viewTransform;
 

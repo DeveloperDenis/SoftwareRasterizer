@@ -10,3 +10,5 @@ running.dll
 *.cpp~
 *.h~
 .gitignore~
+#*
+.#*

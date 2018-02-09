@@ -438,6 +438,8 @@ static void initMemory(Bitmap* screen, Memory* memory, Input* input)
 	memory->cube3.objectTransform.translate(-2.5f, 0.0f, 0.0f);
 	memory->cube3.worldTransform =
 		memory->projectionTransform * memory->viewTransform * memory->cube3.objectTransform;
+
+	initMesh(&memory->monkey, 507, 507, 968, memory->monkeyMemory, (char*)"../data/monkey.obj");
 }
 
 exportDLL MAIN_UPDATE_CALL(mainUpdateCall)
@@ -445,6 +447,7 @@ exportDLL MAIN_UPDATE_CALL(mainUpdateCall)
 	static Mesh* cube1 = &memory->cube1;
 	static Mesh* cube2 = &memory->cube2;
 	static Mesh* cube3 = &memory->cube3;
+	static Mesh* monkey = &memory->monkey;
 	
 	static Camera* camera = &memory->camera;
 	
@@ -460,8 +463,12 @@ exportDLL MAIN_UPDATE_CALL(mainUpdateCall)
 	Rect2 viewportRect = Rect2(memory->cameraBufferPos.x, memory->cameraBufferPos.y,
 							   memory->cameraBuffer.width, memory->cameraBuffer.height);
 
+# if 0
 	cube1->objectTransform.rotate(0.0f, 0.01f, 0.0f);
     cube1->worldTransform = memory->projectionTransform * memory->viewTransform * cube1->objectTransform;
+#endif
+
+	monkey->worldTransform = memory->projectionTransform * memory->viewTransform * monkey->objectTransform;
 	
 	// drawing
 	fillBuffer(screen, 0xFF4D2177);
