@@ -12,3 +12,6 @@ running.dll
 .gitignore~
 #*
 .#*
+*.*~
+
+project_settings.h
