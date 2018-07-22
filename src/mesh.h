@@ -7,46 +7,45 @@
 
 struct Face
 {
-	Vector3 vertices;
-	Vector3 vertexNormals;
+    v3 vertices;
+	v3 vertexNormals;
 };
 
 struct Mesh
 {
-	uint32 numVertices;
-	Vector3f* vertices;
+    u32 numVertices;
+    v3f* vertices;
 
-	uint32 numVertexNormals;
-	Vector3f* vertexNormals;
+    u32 numVertexNormals;
+    v3f* vertexNormals;
 	
-	uint32 numFaces;
+    u32 numFaces;
     Face* faces;
 	
 	Matrix4f objectTransform;
 	Matrix4f worldTransform;
 };
 
-static void readMeshData(char* filename, Vector3f* modelVertices, Vector3f* modelVertexNormals,
-						 Face* modelFaces);
+static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNormals, Face* modelFaces);
 
-static inline bool isValidFace(Face* face, uint32 numVertices)
+static inline bool isValidFace(Face* face, u32 numVertices)
 {
-	return (uint32)face->vertices[0] < numVertices &&
-		(uint32)face->vertices[1] < numVertices &&
-		(uint32)face->vertices[2] < numVertices;
+	return (u32)face->vertices[0] < numVertices &&
+		(u32)face->vertices[1] < numVertices &&
+		(u32)face->vertices[2] < numVertices;
 }
 
-static void initMesh(Mesh* mesh, uint32 numVertices, uint32 numVertexNormals, uint32 numFaces,
-					 uint8* meshMemory, char* modelFilename)
+static void initMesh(Mesh* mesh, u32 numVertices, u32 numVertexNormals, u32 numFaces,
+					 u8* meshMemory, char* modelFilename)
 {
 	mesh->numVertices = numVertices;
-	mesh->vertices = (Vector3f*)meshMemory;
+	mesh->vertices = (v3f*)meshMemory;
 
 	mesh->numVertexNormals = numVertexNormals;
-	mesh->vertexNormals = (Vector3f*)(meshMemory + sizeof(Vector3f)*numVertices);
+	mesh->vertexNormals = (v3f*)(meshMemory + sizeof(v3f)*numVertices);
 
 	mesh->numFaces = numFaces;
-	mesh->faces = (Face*)(meshMemory + sizeof(Vector3f)*(numVertices + numVertexNormals));
+	mesh->faces = (Face*)(meshMemory + sizeof(v3f)*(numVertices + numVertexNormals));
 
 	readMeshData(modelFilename, mesh->vertices, mesh->vertexNormals, mesh->faces);
 
@@ -55,15 +54,14 @@ static void initMesh(Mesh* mesh, uint32 numVertices, uint32 numVertexNormals, ui
 
 //NOTE(denis): if you insert 0 for the faces of vertices parameters the function will allow
 // you to count all the faces or vertices
-static void readMeshData(char* filename, Vector3f* modelVertices, Vector3f* modelVertexNormals,
-						  Face* modelFaces)
+static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNormals, Face* modelFaces)
 {
 	FILE* modelFile = fopen(filename, "r");
 	if (modelFile)
 	{
-		uint32 vertexIndex = 0;
-		uint32 vertexNormalIndex = 0;
-		uint32 faceIndex = 0;
+	    u32 vertexIndex = 0;
+	    u32 vertexNormalIndex = 0;
+	    u32 faceIndex = 0;
 			
 		char line[201] = {};
 		while (fgets(line, 200, modelFile) != NULL)
@@ -72,11 +70,11 @@ static void readMeshData(char* filename, Vector3f* modelVertices, Vector3f* mode
 			{
 				char** tokenArray = tokenizeStringInPlace(line, 5, ' ');
 
-				real32 value1 = parseReal32String(tokenArray[1]);
-				real32 value2 = parseReal32String(tokenArray[2]);
-				real32 value3 = parseReal32String(tokenArray[3]);
+			    f32 value1 = parseF32String(tokenArray[1]);
+			    f32 value2 = parseF32String(tokenArray[2]);
+			    f32 value3 = parseF32String(tokenArray[3]);
 
-				Vector3f vertex = V3f(value1, value2, value3);
+			    v3f vertex(value1, value2, value3);
 
 				if (modelVertices != 0)
 					modelVertices[vertexIndex++] = vertex;
@@ -89,11 +87,11 @@ static void readMeshData(char* filename, Vector3f* modelVertices, Vector3f* mode
 			{
 				char** tokenArray = tokenizeStringInPlace(line, 5, ' ');
 				
-				real32 value1 = parseReal32String(tokenArray[1]);
-				real32 value2 = parseReal32String(tokenArray[2]);
-				real32 value3 = parseReal32String(tokenArray[3]);
+			    f32 value1 = parseF32String(tokenArray[1]);
+			    f32 value2 = parseF32String(tokenArray[2]);
+			    f32 value3 = parseF32String(tokenArray[3]);
 				
-				Vector3f normal = V3f(value1, value2, value3);
+			    v3f normal(value1, value2, value3);
 
 				if (modelVertexNormals != 0)
 					modelVertexNormals[vertexNormalIndex++] = normal;
@@ -111,13 +109,13 @@ static void readMeshData(char* filename, Vector3f* modelVertices, Vector3f* mode
 				char** vertex3Tokens = tokenizeStringInPlace(tokenArray[3], 3, '/');
 				
 				//NOTE(denis): vertex indices start at 1 in .obj files
-				int32 vertexValue1 = parseInt32String(vertex1Tokens[0]) - 1;
-				int32 vertexValue2 = parseInt32String(vertex2Tokens[0]) - 1;
-				int32 vertexValue3 = parseInt32String(vertex3Tokens[0]) - 1;
+				s32 vertexValue1 = parseS32String(vertex1Tokens[0]) - 1;
+			    s32 vertexValue2 = parseS32String(vertex2Tokens[0]) - 1;
+			    s32 vertexValue3 = parseS32String(vertex3Tokens[0]) - 1;
 
-				int32 normalValue1 = parseInt32String(vertex1Tokens[1]) - 1;
-				int32 normalValue2 = parseInt32String(vertex2Tokens[1]) - 1;
-				int32 normalValue3 = parseInt32String(vertex3Tokens[1]) - 1;
+				s32 normalValue1 = parseS32String(vertex1Tokens[1]) - 1;
+				s32 normalValue2 = parseS32String(vertex2Tokens[1]) - 1;
+			    s32 normalValue3 = parseS32String(vertex3Tokens[1]) - 1;
 				
 			    Face face;
 				

@@ -1,0 +1,5 @@
+WINDOW_TITLE=Software Rasterizer
+WINDOW_RESIABLE=false
+WINDOW_WIDTH=1280
+WINDOW_HEIGHT=720
+DLL_FILE_NAME=SoftwareRasterizer.dll
