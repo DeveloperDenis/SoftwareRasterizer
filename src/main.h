@@ -6,7 +6,7 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
-#define ZSCALE_FACTOR 200
+#define ZSCALE_FACTOR 2000
 
 #define MIN_ZOOM 2.0f
 #define MAX_ZOOM 20.0f
@@ -40,14 +40,17 @@ struct ZBufferData
 
 struct Scene
 {
+	Camera camera;
+	
+	v3f ambientColour;
+	
 	v3f lightPos;
+	v3f lightColour;
 };
 
 struct Memory
 {
     v3f upVector;
-	
-	Camera camera;
 
 	//NOTE(denis): used for the camera movement code
     v2 lastMousePos;
@@ -63,10 +66,7 @@ struct Memory
 	Scene scene;
 	
 	Mesh cube;
-    u8 cubeMemory[sizeof(v3f)*8 + sizeof(v3f)*8 + sizeof(Face)*12];
-
 	Mesh monkey;
-    u8 monkeyMemory[sizeof(v3f)*507 + sizeof(v3f)*507 + sizeof(Face)*968];
 
 	u32 rotationAngle;
 	

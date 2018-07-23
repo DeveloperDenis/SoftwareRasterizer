@@ -26,7 +26,7 @@ struct Mesh
 	Matrix4f worldTransform;
 };
 
-static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNormals, Face* modelFaces);
+static void readMeshData(Mesh* mesh, char* filename, bool countMode = false);
 
 static inline bool isValidFace(Face* face, u32 numVertices)
 {
@@ -35,26 +35,22 @@ static inline bool isValidFace(Face* face, u32 numVertices)
 		(u32)face->vertices[2] < numVertices;
 }
 
-static void initMesh(Mesh* mesh, u32 numVertices, u32 numVertexNormals, u32 numFaces,
-					 u8* meshMemory, char* modelFilename)
+static void initMesh(Mesh* mesh, char* modelFilename)
 {
-	mesh->numVertices = numVertices;
-	mesh->vertices = (v3f*)meshMemory;
+	readMeshData(mesh, modelFilename, true);
 
-	mesh->numVertexNormals = numVertexNormals;
-	mesh->vertexNormals = (v3f*)(meshMemory + sizeof(v3f)*numVertices);
-
-	mesh->numFaces = numFaces;
-	mesh->faces = (Face*)(meshMemory + sizeof(v3f)*(numVertices + numVertexNormals));
-
-	readMeshData(modelFilename, mesh->vertices, mesh->vertexNormals, mesh->faces);
+	mesh->vertices = (v3f*)HEAP_ALLOC(sizeof(v3f) * mesh->numVertices);
+	mesh->vertexNormals = (v3f*)HEAP_ALLOC(sizeof(v3f) * mesh->numVertexNormals);
+	mesh->faces = (Face*)HEAP_ALLOC(sizeof(Face) * mesh->numFaces);
+	
+	readMeshData(mesh, modelFilename);
 
 	mesh->objectTransform = getIdentityMatrix4f();
 }
 
 //NOTE(denis): if you insert 0 for the faces of vertices parameters the function will allow
 // you to count all the faces or vertices
-static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNormals, Face* modelFaces)
+static void readMeshData(Mesh* mesh, char* filename, bool countMode)
 {
 	FILE* modelFile = fopen(filename, "r");
 	if (modelFile)
@@ -76,10 +72,10 @@ static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNor
 
 			    v3f vertex(value1, value2, value3);
 
-				if (modelVertices != 0)
-					modelVertices[vertexIndex++] = vertex;
-				else
+				if (countMode)
 					++vertexIndex;
+				else
+				    mesh->vertices[vertexIndex++] = vertex;
 				
 				HEAP_FREE(tokenArray);
 			}
@@ -93,10 +89,10 @@ static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNor
 				
 			    v3f normal(value1, value2, value3);
 
-				if (modelVertexNormals != 0)
-					modelVertexNormals[vertexNormalIndex++] = normal;
-				else
+			    if (countMode)
 					++vertexNormalIndex;
+				else
+				    mesh->vertexNormals[vertexNormalIndex++] = normal;
 
 				HEAP_FREE(tokenArray);
 			}
@@ -127,10 +123,10 @@ static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNor
 				face.vertexNormals.y = normalValue2;
 				face.vertexNormals.z = normalValue3;
 
-				if (modelFaces != 0)
-					modelFaces[faceIndex++] = face;
-				else
+				if (countMode)
 					++faceIndex;
+				else
+					mesh->faces[faceIndex++] = face;				
 
 				HEAP_FREE(vertex1Tokens);
 				HEAP_FREE(vertex2Tokens);
@@ -138,7 +134,11 @@ static void readMeshData(char* filename, v3f* modelVertices, v3f* modelVertexNor
 				HEAP_FREE(tokenArray);
 			}
 		}
-
+		
+		mesh->numVertices = vertexIndex;
+		mesh->numVertexNormals = vertexNormalIndex;
+		mesh->numFaces = faceIndex;
+		
 		fclose(modelFile);
 	}
 }

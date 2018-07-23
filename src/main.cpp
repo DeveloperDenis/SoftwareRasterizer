@@ -59,43 +59,6 @@ static inline void drawTriangle(Bitmap* screen, v3f vertex1, v3f vertex2, v3f ve
 	screenPoints[2] = pointToScreenPos(screen, vertex3, transform);
 	
 	drawTriangle(screen, screenPoints[0], screenPoints[1], screenPoints[2], colour);
-
-}
-
-//NOTE(denis): returns a normalized direction of the light relative to a face
-static inline v3f getLightDirection(Face* face, v3f* vertices, v3f lightPos)
-{
-	v3f midPoint =
-		(vertices[face->vertices[0]] + vertices[face->vertices[1]] + vertices[face->vertices[2]])/3;
-    v3f lightDirection = normalize(lightPos - midPoint);
-
-	return lightDirection;
-}
-
-//NOTE(denis): assumes lightDirection is normalized, but not normal (for some reason)
-u32 calculateLight(v3f normal, v3f lightDirection)
-{
-	v3f normalizedNormal = normalize(normal);
-    f32 scalarProduct = dot(normalizedNormal, lightDirection);
-
-    u32 ambientColour = 0x00202020;
-	u32 colour;
-	if (scalarProduct == 1.0f)
-	    colour = 0xFFFFFFFF;
-	else if (scalarProduct <= 0.0f)
-	    colour = 0xFF000000 + ambientColour;
-	else
-	{
-		u8 brightness = (u8)(0xFF * scalarProduct);
-	    colour = (0xFF << 24) | (brightness << 16) | (brightness << 8) | brightness;
-
-		if (colour <= 0xFFFFFFFF - ambientColour)
-			colour += ambientColour;
-		else
-			colour = 0xFFFFFFFF;
-	}
-
-	return colour;
 }
 
 static void drawWireframe(Bitmap* buffer, Mesh* mesh)
@@ -146,8 +109,10 @@ static Matrix4f calculateProjectionMatrix(f32 near, f32 far, f32 fov)
 
 	//set new w to -z to perform our perspective projection automatically through
 	// the matrix multiplication
+#if 1
     projectionMatrix[3][2] = -1;
     projectionMatrix[3][3] = 0;
+#endif
 
 	//clipping plane stuff
 	projectionMatrix[2][2] = -far / (far - near);
@@ -196,6 +161,11 @@ static Fragments barycentricRasterize(Bitmap* buffer, v3 points[3])
     v3 p2(points[1]);
     v3 p3(points[2]);
 
+	top = MAX(top, 0);
+	left = MAX(left, 0);
+	bottom = MIN(bottom, (s32)buffer->height);
+	right = MIN(right, (s32)buffer->width);
+	
 	//TODO(denis): this frequent heap allocation and free is waaaay slower than what I probably want
     u32 pixelCount = (bottom - top)*(right - left);
 	result.points = (v3*)HEAP_ALLOC(sizeof(v3)*pixelCount);
@@ -229,6 +199,58 @@ static Fragments barycentricRasterize(Bitmap* buffer, v3 points[3])
 	return result;
 }
 
+static v3f calculatePhongShading(Scene* scene, v3f normals[3], v3f triangle[3], v3f baryCoord)
+{
+	v3f colour;
+
+	//TODO(denis): precalculate some of this in the fragment creation phase?
+	v3f point = triangle[0]*baryCoord.x + triangle[1]*baryCoord.y + triangle[2]*baryCoord.z;
+	v3f normal = normals[0]*baryCoord.x + normals[1]*baryCoord.y + normals[2]*baryCoord.z;
+	v3f lightDir = normalize(scene->lightPos - point);
+
+	f32 intensity = dot(normal, lightDir);
+	intensity = CLAMP_RANGE(intensity, 0.0f, 1.0f);
+
+	v3f cameraDir = normalize(scene->camera.pos - point);
+	v3f reflected = normalize(2*intensity*normal - lightDir);
+
+	f32 specular = dot(cameraDir, reflected);
+	if (specular < 0.0f)
+		specular = 0.0f;
+	else
+		specular = pow(specular, 5); //TODO(denis): the shininess power should be a material property
+	
+	//TODO(denis): this should be a property of the material
+	v3f specularColour = v3f(0.6f, 0.6f, 0.6f);
+	
+	colour = scene->ambientColour + intensity*scene->lightColour + specular*specularColour;
+	colour = clampV3f(colour, 0.0f, 1.0f);
+	
+	return colour;
+}
+
+static v3f calculateFlatShading(Scene* scene, v3f triangle[3])
+{
+	v3f colour;
+
+	v3f p1 = triangle[0];
+	v3f p2 = triangle[1];
+	v3f p3 = triangle[2];
+	
+	v3f faceNormal = normalize(cross(p2 - p1, p3 - p2));
+	v3f facePos = (p1 + p2 + p3) / 3;
+
+	v3f lightDirection = normalize(scene->lightPos - facePos);
+
+    f32 intensity = dot(faceNormal, lightDirection);
+	intensity = CLAMP_RANGE(intensity, 0.0f, 1.0f);
+
+	colour = scene->ambientColour + intensity*scene->lightColour;
+	colour = clampV3f(colour, 0.0f, 1.0f);
+	
+	return colour;
+}
+
 static void drawMesh(Bitmap* buffer, s32* zBuffer, Scene* scene, Mesh* mesh)
 {
 	for (u32 faceIndex = 0; faceIndex < mesh->numFaces; ++faceIndex)
@@ -242,30 +264,39 @@ static void drawMesh(Bitmap* buffer, s32* zBuffer, Scene* scene, Mesh* mesh)
 
 	    Fragments fragments = barycentricRasterize(buffer, screenPoints);
 
-	    v3f p1 = mesh->vertices[face->vertices[0]];
-	    v3f p2 = mesh->vertices[face->vertices[1]];
-	    v3f p3 = mesh->vertices[face->vertices[2]];
+		v3f triangle[3] = { mesh->vertices[face->vertices[0]],
+							mesh->vertices[face->vertices[1]],
+							mesh->vertices[face->vertices[2]] };
 
-	    v3f faceNormal = cross(p2 - p1, p3 - p2);
-	    v3f facePosition = (p1 + p2 + p3) / 3;
-	    v3f lightDirection = getLightDirection(face, mesh->vertices, scene->lightPos);
-	    u32 colour = calculateLight(faceNormal, lightDirection);
+		v3f normals[3] = { mesh->vertexNormals[face->vertexNormals[0]],
+						   mesh->vertexNormals[face->vertexNormals[1]],
+						   mesh->vertexNormals[face->vertexNormals[2]] };
+
+		for (u32 i = 0; i < 3; ++i)
+		{
+			triangle[i] = mesh->objectTransform*triangle[i];
+			normals[i] = mesh->objectTransform*normals[i];
+		}
+		
+		//v3f colour = calculateFlatShading(scene, triangle);
 		
 		for (u32 i = 0; i < fragments.numFragments; ++i)
 		{
+			v3f colour = calculatePhongShading(scene, normals, triangle, fragments.baryCoords[i]);
 			//TODO(denis): fragment function doesn't take into account when the fragment is off the screens
 		    v3 fragmentPos = fragments.points[i];
-		    v3f fragmentBary = fragments.baryCoords[i];
 
 			s32 zValue = fragmentPos.z;
 			ASSERT(zValue < 999999);
 
 			u32 bufferPosition = fragmentPos.y*buffer->width + fragmentPos.x;
 			ASSERT(bufferPosition < 720*720);
-			
+
 			if (zValue < zBuffer[bufferPosition])
 			{
-				drawPoint(buffer, fragmentPos.x, fragmentPos.y, colour);
+				u32 packedColour = packColour(colour);
+				
+				drawPoint(buffer, fragmentPos.x, fragmentPos.y, packedColour);
 			    zBuffer[bufferPosition] = zValue;
 			}
 		}
@@ -275,44 +306,24 @@ static void drawMesh(Bitmap* buffer, s32* zBuffer, Scene* scene, Mesh* mesh)
 	}
 }
 
-static void testTriangleRasterization(Bitmap* buffer, void (*rasterizeFunction)(Bitmap*, v3 points[3], u32))
-{
-	v3 p1(640, 360, 100);
-	v3 p2(600, 380, 100);
-	v3 p3(630, 400, 100);
-	v3 p4(625, 300, 100);
-	v3 p5(700, 313, 100);
-	v3 p6(720, 350, 100);
-	v3 p7(712, 480, 100);
-
-    v3 triangle1[3] = {p1, p2, p3};
-	v3 triangle2[3] = {p1, p4, p5};
-    v3 triangle3[3] = {p1, p2, p4};
-    v3 triangle4[3] = {p1, p6, p5};
-    v3 triangle5[3] = {p1, p6, p7};
-    v3 triangle6[3] = {p1, p7, p3};
-
-	rasterizeFunction(buffer, triangle1, 0xFFFF0000);
-	rasterizeFunction(buffer, triangle2, 0xFF00FF00);
-	rasterizeFunction(buffer, triangle3, 0xFF0000FF);
-	rasterizeFunction(buffer, triangle4, 0xFF0000FF);
-	rasterizeFunction(buffer, triangle5, 0xFFFF0000);
-	rasterizeFunction(buffer, triangle6, 0xFF0000FF);
-}
-
 exportDLL APP_INIT_CALL(appInit)
 {
 	memory->lastMousePos = v2(-1, -1);
 		
 	memory->upVector = v3f(0.0f, 1.0f, 0.0f);
 
-	Camera* camera = &memory->camera;
-	camera->pos = v3f(0.0f, 5.0f, 8.0f);
+	// scene set up
+	Camera* camera = &memory->scene.camera;
+	camera->pos = v3f(0.0f, 1.2f, 6.0f);
 	camera->targetPos = v3f(0.0f, 0.0f, 0.0f);
 	camera->nearPlaneZ = 1.0f;
 	camera->farPlaneZ = 10.0f;
-	camera->fov = (f32)(M_PI/2);
+	camera->fov = DEGREE_TO_RAD(45);
 
+	memory->scene.ambientColour = v3f(0.1f, 0.2f, 0.1f);
+	memory->scene.lightPos = v3f(3.0f, 8.0f, 10.0f);
+	memory->scene.lightColour = v3f(0.45f, 0.45f, 0.8f);
+	
 	memory->cameraBuffer.pixels = memory->cameraBufferData;
 	memory->cameraBuffer.width = 720;
 	memory->cameraBuffer.height = 720;
@@ -324,16 +335,13 @@ exportDLL APP_INIT_CALL(appInit)
 	memory->projectionTransform =
 		calculateProjectionMatrix(camera->nearPlaneZ, camera->farPlaneZ, camera->fov);
 
-	memory->scene.lightPos = v3f(3.0f, 8.0f, 10.0f);
-
-	initMesh(&memory->cube, 8, 8, 12, memory->cubeMemory, (char*)"../data/cube.obj");
-	memory->cube.objectTransform.translate(0.0f, 3.5f, 5.5f);
-	memory->cube.objectTransform.setScale(0.6f, 0.6f, 0.6f);
+	initMesh(&memory->cube, (char*)"../data/cube.obj");
+	memory->cube.objectTransform.translate(0.0f, 0.0f, -5.0f);
 	memory->cube.worldTransform =
 		memory->projectionTransform * memory->viewTransform * memory->cube.objectTransform;
 
-	initMesh(&memory->monkey, 507, 507, 968, memory->monkeyMemory, (char*)"../data/monkey.obj");
-	memory->monkey.objectTransform.translate(0.0f, 3.5f, 5.5f);
+	initMesh(&memory->monkey, (char*)"../data/monkey.obj");
+	memory->monkey.objectTransform.translate(0.0f, 0.0f, 0.0f);
 	memory->monkey.worldTransform =
 		memory->projectionTransform * memory->viewTransform * memory->monkey.objectTransform;
 
@@ -351,8 +359,9 @@ exportDLL APP_UPDATE_CALL(appUpdate)
 	mesh->worldTransform = memory->projectionTransform * memory->viewTransform * mesh->objectTransform;
 	
 	fillBuffer(screen, 0xFF4D2177);
-
 	fillBuffer(&memory->cameraBuffer, 0xFF604580);
+
+	//drawWireframe(&memory->cameraBuffer, mesh);
 	drawMesh(&memory->cameraBuffer, memory->zBuffer, &memory->scene, mesh);
 
 	//TODO(denis): I want everything to draw directly into the screen, so this should also go away
