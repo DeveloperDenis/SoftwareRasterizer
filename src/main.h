@@ -11,6 +11,15 @@
 #define MIN_ZOOM 2.0f
 #define MAX_ZOOM 20.0f
 
+enum
+{
+    DRAW_WIREFRAME,
+	DRAW_FLAT,
+	DRAW_PHONG,
+
+	NUM_DRAW_MODES
+};
+
 struct Fragments
 {
     u32 numFragments;
@@ -28,14 +37,6 @@ struct Camera
     f32 farPlaneZ;
 
     f32 fov; // in radians
-};
-
-struct ZBufferData
-{
-    s32* zBuffer;
-    v3 points[3];
-
-    f32 denominators[3];
 };
 
 struct Scene
@@ -68,10 +69,10 @@ struct Memory
 	Mesh cube;
 	Mesh monkey;
 
-	u32 rotationAngle;
-	
 	Matrix4f viewTransform;
 	Matrix4f projectionTransform;
+
+	u32 drawMode;
 };
 
 #endif

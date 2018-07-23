@@ -207,7 +207,7 @@ static v3f calculatePhongShading(Scene* scene, v3f normals[3], v3f triangle[3], 
 	v3f point = triangle[0]*baryCoord.x + triangle[1]*baryCoord.y + triangle[2]*baryCoord.z;
 	v3f normal = normals[0]*baryCoord.x + normals[1]*baryCoord.y + normals[2]*baryCoord.z;
 	v3f lightDir = normalize(scene->lightPos - point);
-
+	
 	f32 intensity = dot(normal, lightDir);
 	intensity = CLAMP_RANGE(intensity, 0.0f, 1.0f);
 
@@ -251,7 +251,7 @@ static v3f calculateFlatShading(Scene* scene, v3f triangle[3])
 	return colour;
 }
 
-static void drawMesh(Bitmap* buffer, s32* zBuffer, Scene* scene, Mesh* mesh)
+static void drawMesh(Bitmap* buffer, s32* zBuffer, Scene* scene, Mesh* mesh, u32 drawMode = DRAW_FLAT)
 {
 	for (u32 faceIndex = 0; faceIndex < mesh->numFaces; ++faceIndex)
 	{
@@ -275,15 +275,19 @@ static void drawMesh(Bitmap* buffer, s32* zBuffer, Scene* scene, Mesh* mesh)
 		for (u32 i = 0; i < 3; ++i)
 		{
 			triangle[i] = mesh->objectTransform*triangle[i];
-			normals[i] = mesh->objectTransform*normals[i];
+			normals[i] = mesh->objectTransform*normals[i] - mesh->objectTransform.getTranslation();
 		}
+
+		v3f colour;
 		
-		//v3f colour = calculateFlatShading(scene, triangle);
+		if (drawMode == DRAW_FLAT)
+		    colour = calculateFlatShading(scene, triangle);
 		
 		for (u32 i = 0; i < fragments.numFragments; ++i)
 		{
-			v3f colour = calculatePhongShading(scene, normals, triangle, fragments.baryCoords[i]);
-			//TODO(denis): fragment function doesn't take into account when the fragment is off the screens
+			if (drawMode == DRAW_PHONG)
+			    colour = calculatePhongShading(scene, normals, triangle, fragments.baryCoords[i]);
+			
 		    v3 fragmentPos = fragments.points[i];
 
 			s32 zValue = fragmentPos.z;
@@ -336,16 +340,16 @@ exportDLL APP_INIT_CALL(appInit)
 		calculateProjectionMatrix(camera->nearPlaneZ, camera->farPlaneZ, camera->fov);
 
 	initMesh(&memory->cube, (char*)"../data/cube.obj");
-	memory->cube.objectTransform.translate(0.0f, 0.0f, -5.0f);
+	memory->cube.objectTransform.translate(0.0f, 0.0f, -1.0f);
 	memory->cube.worldTransform =
 		memory->projectionTransform * memory->viewTransform * memory->cube.objectTransform;
 
 	initMesh(&memory->monkey, (char*)"../data/monkey.obj");
-	memory->monkey.objectTransform.translate(0.0f, 0.0f, 0.0f);
+	memory->monkey.objectTransform.translate(0.0f, -0.6f, -1.0f);
 	memory->monkey.worldTransform =
 		memory->projectionTransform * memory->viewTransform * memory->monkey.objectTransform;
 
-	memory->rotationAngle = 0;
+	memory->drawMode = DRAW_PHONG;
 }
 
 exportDLL APP_UPDATE_CALL(appUpdate)
@@ -354,16 +358,24 @@ exportDLL APP_UPDATE_CALL(appUpdate)
 
 	clearArray(memory->zBuffer, sizeof(memory->zBuffer)/sizeof(s32), 999999);
 
-	memory->rotationAngle = (memory->rotationAngle + 1) % 360;
-	mesh->objectTransform.setRotation(0.0f, DEGREE_TO_RAD(memory->rotationAngle), 0.0f);
+	mesh->objectTransform.rotate(0.0f, 0.01f, 0.0f);
 	mesh->worldTransform = memory->projectionTransform * memory->viewTransform * mesh->objectTransform;
 	
 	fillBuffer(screen, 0xFF4D2177);
 	fillBuffer(&memory->cameraBuffer, 0xFF604580);
 
-	//drawWireframe(&memory->cameraBuffer, mesh);
-	drawMesh(&memory->cameraBuffer, memory->zBuffer, &memory->scene, mesh);
+	if (memory->drawMode == DRAW_WIREFRAME)
+		drawWireframe(&memory->cameraBuffer, mesh);
+	else if (memory->drawMode == DRAW_FLAT)
+		drawMesh(&memory->cameraBuffer, memory->zBuffer, &memory->scene, mesh, DRAW_FLAT);
+	else if (memory->drawMode == DRAW_PHONG)
+		drawMesh(&memory->cameraBuffer, memory->zBuffer, &memory->scene, mesh, DRAW_PHONG);
 
+	if (input->mouse.leftWasPressed)
+	{
+		memory->drawMode = (memory->drawMode + 1) % NUM_DRAW_MODES;
+	}
+	
 	//TODO(denis): I want everything to draw directly into the screen, so this should also go away
 	drawBitmap(screen, &memory->cameraBuffer, memory->cameraBufferPos);
 	
