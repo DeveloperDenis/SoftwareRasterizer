@@ -6,7 +6,7 @@
 #define WINDOW_WIDTH 1280
 #define WINDOW_HEIGHT 720
 
-#define ZSCALE_FACTOR 2000
+#define ZSCALE_FACTOR 5000
 
 #define MIN_ZOOM 2.0f
 #define MAX_ZOOM 20.0f
