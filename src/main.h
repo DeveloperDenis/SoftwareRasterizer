@@ -68,6 +68,8 @@ struct Memory
 	
 	Mesh cube;
 	Mesh monkey;
+	Mesh skull;
+	Mesh sphere;
 
 	Matrix4f viewTransform;
 	Matrix4f projectionTransform;

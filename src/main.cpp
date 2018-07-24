@@ -125,7 +125,7 @@ static Matrix4f calculateProjectionMatrix(f32 near, f32 far, f32 fov)
    return projectionMatrix;
 }
 
-static v3f triangleBarycentric(v3 points[3], v2 testPoint)
+static v3f triangleBarycentric(v3 points[3], v2 testPoint, s32 denominator)
 {
     v3f result;
 
@@ -134,7 +134,6 @@ static v3f triangleBarycentric(v3 points[3], v2 testPoint)
     v2 p3 = points[2].xy;
 
 	//TODO(denis): denominator can be taken out of this function as an optimization
-    s32 denominator = (p2.y - p3.y)*(p1.x - p3.x) + (p3.x - p2.x)*(p1.y - p3.y);
 	result.x = (f32)((p2.y - p3.y)*(testPoint.x - p3.x) + (p3.x - p2.x)*(testPoint.y - p3.y)) / (f32)denominator;
 	result.y = (f32)((p3.y - p1.y)*(testPoint.x - p3.x) + (p1.x - p3.x)*(testPoint.y - p3.y)) / (f32)denominator;
 	result.z = 1.0f - result.x - result.y;
@@ -171,6 +170,8 @@ static Fragments barycentricRasterize(Bitmap* buffer, v3 points[3])
 	result.points = (v3*)HEAP_ALLOC(sizeof(v3)*pixelCount);
 	result.baryCoords = (v3f*)HEAP_ALLOC(sizeof(v3f)*pixelCount);
 
+	s32 denominator = (p2.y - p3.y)*(p1.x - p3.x) + (p3.x - p2.x)*(p1.y - p3.y);
+
 	for (s32 y = top; y < bottom; ++y)
 	{
 		for (s32 x = left; x < right; ++x)
@@ -181,7 +182,7 @@ static Fragments barycentricRasterize(Bitmap* buffer, v3 points[3])
 
 			ASSERT(testPoint.x >= 0.0f && testPoint.y >= 0.0f);
 			
-			v3f testPointBarycentric = triangleBarycentric(points, testPoint);
+			v3f testPointBarycentric = triangleBarycentric(points, testPoint, denominator);
 
 			//TODO(denis): not perfect, but handles edge cases better than the cross product method
 			if (testPointBarycentric.x >= 0.0f && testPointBarycentric.x <= 1.0f &&
@@ -349,7 +350,17 @@ exportDLL APP_INIT_CALL(appInit)
 	memory->monkey.worldTransform =
 		memory->projectionTransform * memory->viewTransform * memory->monkey.objectTransform;
 
-	memory->drawMode = DRAW_PHONG;
+	initMesh(&memory->skull, (char*)"../data/skull.obj");
+	memory->skull.objectTransform.translate(0.0f, -1.3f, 0.0f);
+	memory->skull.worldTransform =
+		memory->projectionTransform * memory->viewTransform * memory->skull.objectTransform;
+
+	initMesh(&memory->sphere, (char*)"../data/sphere.obj");
+	memory->sphere.objectTransform.translate(0.0f, 0.0f, 0.0f);
+	memory->sphere.worldTransform =
+		memory->projectionTransform * memory->viewTransform * memory->sphere.objectTransform;
+	
+	memory->drawMode = DRAW_WIREFRAME;
 }
 
 exportDLL APP_UPDATE_CALL(appUpdate)

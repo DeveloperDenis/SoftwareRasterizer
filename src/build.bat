@@ -11,7 +11,7 @@ set dt=%date:~7,2%-%date:~4,2%-%date:~10,4%_%hh%_%time:~3,2%_%time:~6,2%
 
 set denis_library=..\developerdenis\
 
-set flags=/nologo /D_CRT_SECURE_NO_WARNINGS /DDEBUG /DDENIS_WIN32 /Gm- /GR- /EHa- /Zi /FC /W4 /WX /wd4100 /wd4505 /wd4189 /wd4201
+set flags=/nologo /D_CRT_SECURE_NO_WARNINGS /DDEBUG /O2 /DDENIS_WIN32 /Gm- /GR- /EHa- /Zi /FC /W4 /WX /wd4100 /wd4505 /wd4189 /wd4201
 set linker_flags=/incremental:no
 set includes=/I %denis_library% /I ../src/
 set files=..\src\main.cpp
