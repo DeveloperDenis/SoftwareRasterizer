@@ -84,9 +84,6 @@ static Matrix4f calculateViewMatrix(v3f cameraPos, v3f targetPos, v3f upVector)
 	Matrix4f viewMatrix = M4f();
 
 	v3f zAxis = normalize(cameraPos - targetPos);	
-	//TODO(denis): if I am going to be rotating the camera around, I need to handle the case
-	// where the zAxis is (0, 1, 0) or (0, -1, 0) since that would break this calculation
-//	ASSERT(zAxis != v3f(0.0f, 1.0f, 0.0f) && zAxis != v3f(0.0f, -1.0f, 0.0f));
     v3f xAxis = normalize(cross(upVector, zAxis));
     v3f yAxis = cross(zAxis, xAxis);
 
@@ -109,10 +106,8 @@ static Matrix4f calculateProjectionMatrix(f32 near, f32 far, f32 fov)
 
 	//set new w to -z to perform our perspective projection automatically through
 	// the matrix multiplication
-#if 1
     projectionMatrix[3][2] = -1;
     projectionMatrix[3][3] = 0;
-#endif
 
 	//clipping plane stuff
 	projectionMatrix[2][2] = -far / (far - near);
@@ -133,7 +128,6 @@ static v3f triangleBarycentric(v3 points[3], v2 testPoint, s32 denominator)
     v2 p2 = points[1].xy;
     v2 p3 = points[2].xy;
 
-	//TODO(denis): denominator can be taken out of this function as an optimization
 	result.x = (f32)((p2.y - p3.y)*(testPoint.x - p3.x) + (p3.x - p2.x)*(testPoint.y - p3.y)) / (f32)denominator;
 	result.y = (f32)((p3.y - p1.y)*(testPoint.x - p3.x) + (p1.x - p3.x)*(testPoint.y - p3.y)) / (f32)denominator;
 	result.z = 1.0f - result.x - result.y;
@@ -204,7 +198,6 @@ static v3f calculatePhongShading(Scene* scene, v3f normals[3], v3f triangle[3], 
 {
 	v3f colour;
 
-	//TODO(denis): precalculate some of this in the fragment creation phase?
 	v3f point = triangle[0]*baryCoord.x + triangle[1]*baryCoord.y + triangle[2]*baryCoord.z;
 	v3f normal = normals[0]*baryCoord.x + normals[1]*baryCoord.y + normals[2]*baryCoord.z;
 	v3f lightDir = normalize(scene->lightPos - point);

@@ -56,7 +56,7 @@ struct Memory
 	//NOTE(denis): used for the camera movement code
     v2 lastMousePos;
 
-	//TODO(denis): step one: draw the 3D scene in the whole screen
+	//TODO(denis): draw the 3D scene in the whole screen
 	// which means I need to change how I calculate the projection matrix so that it supports
 	// non-square resolutions
 	Bitmap cameraBuffer;
